@@ -17,8 +17,6 @@ public class Client
     private ObjectOutputStream output;
     private ServerResponseListener serverResponseListener;
     private Thread serverResponseListenerThread;
-
-
     
     public Client()
     {
