@@ -1,8 +1,12 @@
 import java.io.DataOutputStream;
+import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.TreeMap;
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Server 
 {   
@@ -11,7 +15,7 @@ public class Server
     private ServerSocket serverSocket;
     private ClientConnectionListener clientListener;
     private Thread clientConnectionListenerThread;
-    private TreeMap<Integer,Thread> clientSessionThreads;
+    private Map<Integer,ClientSession> clientSessions;
     
     public Server()
     {
@@ -20,7 +24,8 @@ public class Server
             serverSocket = new ServerSocket(PORT);
             clientListener = new ClientConnectionListener();
             clientConnectionListenerThread = new Thread(clientListener);
-            clientSessionThreads = new TreeMap<>();
+            clientSessions = new HashMap<>();
+
             System.out.println("Server init successful");
         }
         catch (Exception e)
@@ -49,7 +54,7 @@ public class Server
                     Socket socket = serverSocket.accept();
                     //create session id
                     int sessionID = 1;
-                    while(clientSessionThreads.containsKey(sessionID))
+                    while(clientSessions.containsKey(sessionID))
                     {
                         sessionID++; //increments session id until the lowest unused id is found
                     }
@@ -58,14 +63,8 @@ public class Server
                         output.writeInt(sessionID);
                     }
                     
-                    //get input stream
-                    ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
-                    //read id
-                    int id = input.readInt();
-                    //close connection
-                    input.close();
                     //add to tables
-                    createClientResponseListener(socket, id);
+                    clientSessions.put(sessionID, new ClientSession(sessionID, socket));
                 }
                 catch (Exception e)
                 {
@@ -75,28 +74,28 @@ public class Server
         }
     }
 
-    private void createClientResponseListener(Socket socket, int id)
-    {
-        ClientResponseListener listener = new ClientResponseListener(id, socket);
-        Thread thread = new Thread(listener);
-        clientSessionThreads.put(id, thread);
-    }
-
-    private class ClientResponseListener implements Runnable
+    private class ClientSession implements Runnable
     {
         public boolean running;
-        public int clientID;
-        public Socket socket;
+        private int userID;
+        public int sessionID;
+        private Socket socket;
         private ObjectInputStream input;
+        private ObjectOutputStream output;
 
-        public ClientResponseListener (int clientID, Socket socket)
+        private final String SUCCESS = "SUCCESS";
+        private final String FAILURE = "FAILURE";
+
+        public ClientSession (int sessionID, Socket socket)
         {
-            this.clientID = clientID;
+            this.sessionID = sessionID;
             this.socket = socket;
+
             try
             {
                 input = new ObjectInputStream(socket.getInputStream());
-                System.out.println("Created client response listenser for client ID: "+clientID);
+                output = new ObjectOutputStream(socket.getOutputStream());
+                System.out.println("Created client response listenser for session ID: "+sessionID);
             }
             catch(Exception e)
             {
@@ -123,13 +122,11 @@ public class Server
 
         public void processInputData(Data data)
         {
-            switch (data.status) {
+            //wrapper automatically recycles connections
+            switch (data.getStatus()) {
                 case "LOGIN": 
-
-                    break;
+                    login(data); break;
                 case "LOGOUT":  
-                    break;
-                case "SIGN-UP":  
                     break;
                 case "CREATE-GROUP":  
                     break;
@@ -147,9 +144,58 @@ public class Server
                     break;
                 case "DELETE-CHANNEL":  
                     break;
+                case "SIGN-UP":  
+                    signup(data); break;
                 default:
                     break;
             }
+        }
+
+        private void login(Data data) {
+            try {
+                UserDAO dao = new UserDAO();
+    
+                // Get user ID using DAO
+                int userID = dao.getID(data.getContent("uname"), data.getContent("pass"));
+    
+                // Send Login-specific response
+                sendResponse(data.getID(), userID > -1 ? SUCCESS : FAILURE, "uid", Integer.toString(userID));
+            } catch (SQLException e) {
+                logError("Login failed due to a database error.", e);
+                sendResponse(data.getID(), FAILURE, "error", "Database error during login");
+            } catch (Exception e) {
+                logError("Unexpected error during login.", e);
+                sendResponse(data.getID(), FAILURE, "error", "Unexpected error during login");
+            }
+        }
+
+        private void signup(Data data) {
+            try {
+                UserDAO dao = new UserDAO();
+        
+                // Insert new user and get their ID
+                int userID = dao.set(new User(data.getContent("uname"), data.getContent("email"), data.getContent("pass")));
+        
+                // Send Signup-specific response
+                sendResponse(data.getID(), userID > -1 ? SUCCESS : FAILURE, "uid", Integer.toString(userID));
+            } catch (Exception e) {
+                logError("Unexpected error during signup.", e);
+                sendResponse(data.getID(), FAILURE, "error", "Unexpected error during signup");
+            }
+        }
+        // Helper method to send a response (flexible for different content)
+        private void sendResponse(int requestID, String status, String... content) {
+            try {
+                output.writeObject(new Data(requestID, status, content));
+            } catch (IOException e) {
+                logError("Failed to send response.", e);
+            }
+        }
+
+        // Helper method to log errors
+        private void logError(String message, Exception e) {
+            System.err.println(message);
+            e.printStackTrace(); // Replace with a proper logging framework in production
         }
     }
 

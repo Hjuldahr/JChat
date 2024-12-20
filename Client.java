@@ -4,20 +4,34 @@ import java.io.ObjectOutputStream;
 import java.net.ConnectException;
 import java.net.Socket;
 
+import javax.swing.JFrame;
+
 public class Client 
 {
     private final int SERVER_PORT = 8000;
     private final String SERVER_ADDRESS = "127.0.0.1";
     private final int RECONNECT_INTERVAL = 5000;
 
-    private int sessionID;
-    private String password = "1234";
+    private int sessionID; //disposable and unique to the session
+    private String userName;
+    private int userID; //unique to the profile and set on login/signup
     private Socket socket;
-    private ObjectOutputStream input;
+    private ObjectInputStream input;
     private ObjectOutputStream output;
-    private ServerResponseListener serverResponseListener;
-    private Thread serverResponseListenerThread;
+    private ServerResponseHandler serverResponseHandler;
+    private Thread serverResponseHandlerThread;
+    private JFrame page;
     
+    public void setUserName(String userName)
+    {
+        this.userName = userName;
+    }
+
+    public String getUserName()
+    {
+        return userName;
+    }
+
     public Client()
     {
         initialize();
@@ -34,10 +48,10 @@ public class Client
                 try (DataInputStream output = new DataInputStream(socket.getInputStream())) {
                     sessionID = output.readInt();
                 }
-
                 output = new ObjectOutputStream(socket.getOutputStream());
-                serverResponseListener = new ServerResponseListener(socket);
-                serverResponseListenerThread = new Thread(serverResponseListener);
+                serverResponseHandler = new ServerResponseHandler(socket);
+                serverResponseHandlerThread = new Thread(serverResponseHandler);
+                page = new WelcomePage(this);
                 System.out.println("Client connect successful");
             }
             catch (ConnectException ce)
@@ -62,29 +76,61 @@ public class Client
 
     public void startup()
     {
-        serverResponseListenerThread.run();
+        serverResponseHandlerThread.run();
     }
 
-    public void requestLogin(String username, String password)
+    public boolean sendLogin(String username, String password)
     {
         try 
         {
-            String[] contents = new String[]{"user", username, "pass", password};
+            //to server
+            this.userName = username;
+            String[] contents = new String[]{"uname", username, "pass", password};
             output.writeObject(new Data(sessionID, "LOGIN", contents));
+            //from server
+            Data data = (Data) input.readObject();
+            if (data.getStatus().equals("SUCCESS"))
+            {
+                userID = Integer.parseInt(data.getContent("uid"));
+                return true;
+            }
         }
         catch (Exception e)
         {
             System.err.println("Client login request failed: "+e);
         }
+        return false;
+    }
+
+    public boolean sendSignup(String username, String email, String password)
+    {
+        try 
+        {
+            this.userName = username;
+            String[] contents = new String[]{"uname", username, "email", email, "pass", password};
+            output.writeObject(new Data(sessionID, "SIGNUP", contents));
+            //from server
+            Data data = (Data) input.readObject();
+            if (data.getStatus().equals("SUCCESS"))
+            {
+                userID = Integer.parseInt(data.getContent("uid"));
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            System.err.println("Client signup request failed: "+e);
+        }
+        return false;
     }
     
-    private class ServerResponseListener implements Runnable
+    private class ServerResponseHandler implements Runnable
     {
         public boolean running;
         public Socket socket;
         private ObjectInputStream input;
 
-        public ServerResponseListener (Socket socket)
+        public ServerResponseHandler (Socket socket)
         {
             this.socket = socket;
             try
@@ -105,6 +151,12 @@ public class Client
                 try
                 {
                     Data data = (Data) input.readObject();
+                    switch(data.getStatus())
+                    {
+                        case "LOGIN-SUCCESS": 
+                            userID = Integer.parseInt(data.getContent("userID"));
+                            break;
+                    }
                 }
                 catch (Exception e)
                 {
@@ -116,10 +168,7 @@ public class Client
 
     public static void main(String[] args)
     {
-        //TODO loop for connecting if fails, with attempt delay to prevent network overload
-        
         Client client = new Client();
         client.startup();
-        client.requestLogin("User1", "1234");
     }
 }

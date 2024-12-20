@@ -3,9 +3,9 @@ import java.util.HashMap;
 
 public class Data implements Serializable
 {
-    public int id;
-    public String status;
-    public HashMap<String,String> contents;
+    private int id;
+    private String status;
+    private HashMap<String,String> contents;
 
     public Data(int id, String status, HashMap<String,String> contents)
     {
@@ -23,7 +23,17 @@ public class Data implements Serializable
         setContents(key_values);
     }
 
-    public void setContents(String[] key_values)
+    public int getID()
+    {
+        return id;
+    }
+
+    public String getStatus()
+    {
+        return status;
+    }
+
+    private void setContents(String[] key_values)
     {
         for (int i = 0; i < key_values.length; i+=2)
         {

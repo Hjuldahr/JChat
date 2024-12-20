@@ -1,18 +1,36 @@
-import java.sql.Connection;
-import java.util.ArrayList;
+import java.util.List;
 
-public abstract class DAO<T>
-{
-    public Connection connection;
-    
-    public DAO(Connection connection)
-    {
-        this.connection = connection;
-    }
-    
-    public abstract void add(T entity);
-    public abstract T get(int id);
-    public abstract ArrayList<T> getAll();
-    public abstract void update(T entity);
-    public abstract void remove(int id);
+public interface DAO<T> {
+
+    /**
+     * select a single entity by ID
+     * @param id
+     * @return entity, not null indicates success, null indicates failure
+     */
+    public T get(int id);
+    /**
+     * selects a subset of entities between start and start+size
+     * @param start
+     * @param size
+     * @return list of entities, size >0 indicates success, size of 0 indicates no results or failure, 
+     */
+    public List<T> getAll(int start, int size); 
+    /**
+     * insert entities
+     * @param entity
+     * @return entity id, >-1 indicates success, -1 indicates failure to set
+     */
+    public int set(T entity);
+    /**
+     * update entities
+     * @param entity
+     * @return success flag, true for success, false for failure
+     */
+    public boolean update(T entity);
+    /**
+     * delete entities
+     * @param id
+     * @return success flag, true for success, false for failure
+     */
+    public boolean remove(int id);
 }
